@@ -93,6 +93,12 @@ class ServicioInventarioRemoto:
             "servidor": self.servidor_id,
         }
 
+    def obtener_sesion(self, token):
+        sesion = self._autorizar(token)
+        if not sesion["exito"]:
+            return sesion
+        return self._respuesta(True, "Sesión válida.", usuario=sesion["usuario"], rol=sesion["rol"])
+
     def listar_inventario(self, token):
         sesion = self._autorizar(token)
         if not sesion["exito"]:
@@ -226,7 +232,7 @@ class ServicioInventarioRemoto:
         if not self.inventario.usuario_activo_con_rol(usuario, rol):
             return self._respuesta(False, "La cuenta ya no está autorizada.", requiere_login=True)
         if roles and rol not in roles:
-            return self._respuesta(False, "No tienes permisos para ejecutar esta operación.")
+            return self._respuesta(False, "No tienes permisos para ejecutar esta operación.", codigo="SIN_PERMISOS")
         return {"exito": True, "usuario": usuario, "rol": rol}
 
     def _validar_operacion(self, id_producto, cantidad, request_id):

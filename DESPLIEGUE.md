@@ -1,52 +1,51 @@
-# InvAx en Render Free y Supabase Free
+# Actualizar InvAx en GitHub y Render
 
-## 1. Actualizar GitHub
+## Servicio existente
 
-Extraer InvAx_Supabase_Etapa2.zip y subir el contenido de la carpeta InvAx a la raíz de AxelHerESC/InvAx, reemplazando los archivos con el mismo nombre. Dockerfile y render.yaml deben quedar en la raíz. No subir el ZIP como archivo ni crear una carpeta InvAx adicional dentro del repositorio.
+1. Extraer `InvAx_Frontend_Backend.zip`.
+2. En el repositorio `AxelHerESC/InvAx`, abrir **Add file → Upload files**.
+3. Arrastrar el CONTENIDO de la carpeta extraída `InvAx`, incluyendo las carpetas `frontend`, `backend`, `database` y `tests`, y los archivos de la raíz. No subir el ZIP ni una carpeta InvAx adicional. Reemplazar los archivos existentes.
+4. Confirmar con **Commit changes**. Mensaje sugerido: `Implementar interfaz web y operaciones de InvAx`.
+5. Render desplegará el commit si el despliegue automático está activo. En caso contrario, usar **Manual Deploy → Deploy latest commit** en el servicio existente.
+6. Esperar **Your service is live** y abrir `https://invax.onrender.com/`. Si aparece la versión anterior, recargar la página.
 
-Mensaje sugerido: Adaptar InvAx a PostgreSQL de Supabase.
+No hay que crear otro servicio, cambiar las variables actuales ni ejecutar SQL de nuevo. El frontend usa la API del mismo dominio y el Dockerfile existente lo incluye automáticamente.
 
-## 2. Obtener la conexión de Supabase
+## Probar por pasos
 
-En el proyecto InvAx, pulsar Connect y elegir Session pooler. Usar el URI del panel con el host pooler y el puerto 5432. Esta alternativa permite conectarse desde redes IPv4. Conservar la cadena en privado y colocar la contraseña real en lugar de [YOUR-PASSWORD]. Si la contraseña contiene caracteres reservados de una URL, debe codificarse al formar el URI; nunca codificar el URI completo ni compartir la contraseña aquí.
+1. Entrar como `admin` con su contraseña actual de InvAx. La contraseña de PostgreSQL no sirve para iniciar sesión aquí.
+2. Comprobar el catálogo y el estado de los tres nodos. Reponer una unidad de un producto y comprobar el aumento.
+3. Abrir Actividad y comprobar el registro de reposición.
+4. Cerrar sesión y entrar como `vendedor`. Registrar una venta de una unidad y comprobar la disminución.
+5. Volver a entrar o recargar para comprobar la persistencia. No compartir contraseñas ni tokens al enviar resultados o capturas.
 
-No se necesitan SUPABASE_URL, anon key ni service_role key para este backend, porque se conecta a PostgreSQL con psycopg.
+Si un movimiento pierde la respuesta, usar **Reintentar confirmación**. Conserva el identificador para evitar aplicarlo dos veces.
 
-## 3. Crear el servicio mediante Blueprint
+## Referencia de variables privadas
 
-Crear una cuenta de Render y conectar el repositorio privado InvAx. En New → Blueprint seleccionar el repositorio y la rama que contiene render.yaml. El Blueprint declara un único Web Service con plan free. Revisar que no se propongan servicios de pago.
-
-Render pedirá estas variables privadas:
-
-| Variable | Contenido |
+| Variable | Valor |
 | --- | --- |
-| DATABASE_URL | URI de Session pooler, con la contraseña de PostgreSQL |
-| INVENTARIO_ADMIN_PASSWORD | Contraseña propia de al menos 12 caracteres para admin |
-| INVENTARIO_VENDEDOR_PASSWORD | Otra contraseña propia de al menos 12 caracteres para vendedor |
+| DATABASE_URL | URI PostgreSQL del Session pooler sin contraseña, descrito abajo |
+| DATABASE_PASSWORD | Contraseña original de la base, sin comillas ni codificación URL |
+| INVENTARIO_ADMIN_PASSWORD | Contraseña inicial de admin; al menos 12 caracteres |
+| INVENTARIO_VENDEDOR_PASSWORD | Contraseña inicial distinta para vendedor; al menos 12 caracteres |
+| INVENTARIO_AUTHKEY | Secreto interno aleatorio de al menos 32 caracteres |
+| INVENTARIO_TOKEN_SECRET | Otro secreto aleatorio de al menos 32 caracteres |
 
-El Blueprint genera automáticamente INVENTARIO_AUTHKEY e INVENTARIO_TOKEN_SECRET. No cambiarlas en cada despliegue: el secreto de tokens mantiene la validez de las sesiones hasta su vencimiento. Son distintas de las contraseñas de los usuarios.
+El URI de este proyecto es:
 
-Si se elige Web Service manualmente en lugar de Blueprint, se deben generar y configurar también esas dos variables, con valores aleatorios distintos de al menos 32 caracteres cada uno. Seleccionar Docker y Free; usar /api/listo como health check. No cambiar Docker Command, porque el Dockerfile ya incluye el comando de inicio.
+```
+postgresql://postgres.frefpudusrtazhwfhmpk@aws-1-us-west-2.pooler.supabase.com:5432/postgres
+```
 
-Las contraseñas admin/vendedor solo se usan para la primera creación. Modificar las variables posteriormente no reemplaza contraseñas almacenadas en la base. No usar las contraseñas de demostración de la práctica anterior.
+Debe aparecer una sola vez, sin espacios, comillas ni el texto `DATABASE_URL=`. La contraseña va solamente en `DATABASE_PASSWORD`. También se admite una contraseña correctamente codificada dentro de DATABASE_URL, pero la configuración separada evita problemas de caracteres especiales.
 
-## 4. Comprobar el despliegue
+Las contraseñas iniciales solo crean las cuentas cuando la tabla usuarios está vacía. Cambiar esas variables después no cambia contraseñas ya guardadas. Cambiarlas desde la interfaz de la propia cuenta. Conservar los secretos internos entre despliegues.
 
-1. Revisar los logs de construcción y arranque sin copiar credenciales.
-2. Abrir https://TU-SERVICIO.onrender.com/api/salud.
-3. Abrir https://TU-SERVICIO.onrender.com/api/listo: debe responder exito=true y el identificador de un servidor.
-4. Probar el login y la consulta protegida en la etapa siguiente.
-5. Comprobar en Supabase que se crearon admin y vendedor con hashes.
-6. Reiniciar el servicio y verificar que los productos y usuarios permanecen.
+Para un servicio nuevo, seleccionar Docker y Free, mantener Docker Command vacío y usar `/api/listo` como health check. El Blueprint genera los dos secretos internos y solicita el resto de variables; si se usa contraseña separada, añadir DATABASE_PASSWORD en Environment antes del despliegue.
 
-El proyecto todavía no incluye una página web en /. Esa respuesta 404 no indica un fallo en la API.
+## Límites del alojamiento
 
-## Seguridad y límites
+Render Free puede suspender la aplicación por inactividad. El primer acceso puede tardar mientras arranca. La base está en Supabase y no depende del disco temporal de Render. El plan gratuito de Supabase también puede pausar proyectos inactivos.
 
-- La API queda accesible mediante HTTPS en Render. La conexión PostgreSQL usa sslmode=require para cifrar el tráfico.
-- Ninguna contraseña ni URI con credenciales se escribe en GitHub.
-- RLS está activado en las tablas y no se dieron permisos a anon ni authenticated. La conexión administrativa del backend tiene permisos elevados y debe permanecer privada.
-- Los tres objetos BaseManager solo escuchan en localhost; no se debe publicar sus puertos.
-- El bloqueo de intentos de login es por objeto y se reinicia junto con los procesos. No es un bloqueo global persistente.
-- Render Free puede suspender la aplicación por inactividad. Supabase conserva la base independientemente del disco temporal de Render; su plan Free también puede pausar proyectos inactivos.
-- La integración real de PostgreSQL sigue pendiente hasta completar los pasos anteriores. Las pruebas de concurrencia contra PostgreSQL precederán a las ventas por HTTP.
+Los tres nodos están dentro de una sola instancia Render. Sus puertos no deben exponerse. El navegador utiliza HTTPS y la conexión PostgreSQL exige TLS. Mantener las credenciales fuera de GitHub y conservar la configuración de RLS y Data API existente.

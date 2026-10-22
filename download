@@ -1,0 +1,11 @@
+.venv
+.git
+__pycache__
+**/__pycache__
+*.db
+*.db-wal
+*.db-shm
+.clave_cliente
+.seguridad_servidor.json
+.env
+data

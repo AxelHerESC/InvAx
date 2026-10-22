@@ -1,60 +1,57 @@
 # InvAx
 
-Sistema de inventario con backend Flask, objetos remotos Python y persistencia PostgreSQL en Supabase. El despliegue previsto es un Web Service de Render Free. No se necesita disco persistente en Render.
+Inventario escolar con frontend HTML/CSS/JavaScript, API Flask y objetos remotos Python. Se despliega en un Web Service de Render Free y guarda sus datos en PostgreSQL de Supabase. La interfaz se sirve desde `/` en el mismo dominio que la API; no requiere compilar Node ni alojar el frontend por separado.
 
-## Estado del proyecto
+## Funciones
 
-- Implementado: login y consulta de productos mediante HTTP, adaptación de persistencia a PostgreSQL y configuración de despliegue.
-- Pendiente de validar en el alojamiento: conexión con el proyecto de Supabase y arranque completo con PostgreSQL.
-- Próximas etapas: exponer ventas, reposición, usuarios y auditoría en la API; después frontend y pruebas desde varios navegadores.
-- Todavía no se ha publicado una URL ni implementado el frontend. La ruta / devuelve 404 hasta incorporar la interfaz.
+- Inicio de sesión y restauración de sesión en la pestaña.
+- Catálogo con búsqueda, filtros de existencias y métricas de inventario.
+- Vendedor: consultar y registrar ventas.
+- Administrador: consultar, reponer existencias, crear cuentas y consultar auditoría.
+- Ambos roles pueden cambiar su propia contraseña.
+- Comprobación de disponibilidad de S1, S2 y S3.
+- Validación de cantidades y permisos en el backend. Los movimientos llevan UUID para reintentar sin duplicar el cambio de existencias.
 
-## Arquitectura
+No se incluyen contraseñas de acceso en el frontend. Las cuentas iniciales son `admin` y `vendedor`, con las contraseñas configuradas al primer arranque del servicio.
 
-Navegador → API Flask/Gunicorn en Render → S1, S2 y S3 en localhost → PostgreSQL de Supabase.
+## Arquitectura y persistencia
 
-S1, S2 y S3 son procesos internos de una misma instancia. Se conserva la invocación de objetos mediante BaseManager. Sus puertos 5100, 5101 y 5102 no se publican. La comunicación desde el navegador utiliza HTTPS proporcionado por Render y la conexión a PostgreSQL exige TLS.
+Navegador → HTTPS de Render → Flask/Gunicorn → S1/S2/S3 mediante BaseManager → PostgreSQL de Supabase.
 
-La base almacena productos, usuarios, operaciones y auditoría. Las existencias se modifican con bloqueos de fila y transacciones. El identificador de operación se bloquea en PostgreSQL y se comprueba junto con su usuario y contenido para impedir descuentos repetidos. El registro de la operación se confirma en la misma transacción que el cambio de stock; la auditoría del servicio se registra por separado, como en la implementación original.
+Los tres nodos son procesos internos de la misma instancia, con puertos de localhost. El adaptador prueba el primer nodo accesible y continúa con el siguiente ante errores; no realiza balanceo por carga. El estado de un nodo comprueba su respuesta; `/api/listo` además hace una lectura de la base mediante un nodo disponible.
 
-## Supabase
+PostgreSQL almacena productos, usuarios, operaciones y auditoría. El cambio de stock y la respuesta de una operación se confirman en una misma transacción, con bloqueo de fila y del identificador de operación. El servicio registra la auditoría por separado. Las contraseñas se almacenan como hashes PBKDF2; los tokens están firmados con HMAC. Se comprueban rol y cuenta activa al autorizar cada operación.
 
-El script database/01_tablas.sql corresponde al que se ejecutó en el SQL Editor del proyecto. Si ya se ejecutó, no hace falta repetirlo. Mantener la Data API desactivada; los clientes del navegador usarán únicamente la API de InvAx. El backend se conecta con el usuario PostgreSQL indicado en DATABASE_URL, que debe tener los permisos necesarios para estas tablas. La configuración inicial utiliza la conexión del usuario postgres del proyecto; esa credencial solo se guarda en el alojamiento.
+El navegador conserva el token en sessionStorage, sin almacenar contraseñas. Si un movimiento pierde su respuesta, conserva el mismo UUID y permite reintentar su confirmación. No se permite modificar ese movimiento mientras su resultado es incierto.
 
-Los usuarios iniciales se crean al primer arranque si la tabla usuarios está vacía. Se guardan salt y hash PBKDF2, nunca la contraseña en texto. No son cuentas de Supabase Auth: InvAx conserva su propio sistema de autenticación y roles.
+## Rutas
 
-## Despliegue
-
-Consultar DESPLIEGUE.md. El archivo render.yaml prepara un único servicio Free sin disco. Las credenciales se proporcionan en el panel, no en el repositorio. Los secretos internos permanecen en variables de entorno, de modo que no se pierden por el almacenamiento temporal de Render.
-
-## Rutas actuales
+Todas las rutas salvo `/`, assets, salud, listo y login requieren `Authorization: Bearer TOKEN`.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
-| GET | /api/salud | API HTTP activa; identifica InvAx |
-| GET | /api/listo | Comprueba un objeto remoto y una lectura en la base |
-| POST | /api/login | JSON con usuario y clave |
-| GET | /api/productos | Authorization: Bearer TOKEN |
+| GET | / | Interfaz web |
+| GET | /api/salud | Salud HTTP |
+| GET | /api/listo | Nodo y lectura de persistencia |
+| POST | /api/login | usuario, clave |
+| GET | /api/sesion | Usuario y rol |
+| GET | /api/productos | Catálogo |
+| GET | /api/productos/P001 | Producto |
+| POST | /api/ventas | id_producto, cantidad, request_id UUID |
+| POST | /api/reposiciones | id_producto, cantidad, request_id UUID |
+| POST | /api/usuarios | usuario, clave, rol |
+| PUT | /api/clave | clave_actual, clave_nueva |
+| GET | /api/auditoria?limite=50 | Últimos registros; límite 1 a 100 |
+| GET | /api/servidores | Disponibilidad de nodos |
 
-La ruta /api/listo devuelve 503 si no puede completarse la lectura. Una comprobación exitosa no garantiza que todos los nodos estén activos. El adaptador elige el primer nodo accesible y prueba el siguiente si hay un error; no implementa balanceo por carga.
+La cantidad debe ser un entero entre 1 y 10000. Una operación rechazada por existencias devuelve 409; sesión inválida 401; permisos insuficientes 403; almacén o clúster inaccesible 503.
 
-## Verificación realizada antes de entregar
+## Despliegue y comprobaciones
 
-Pasaron diez pruebas HTTP con un objeto remoto real y SQLite temporal: autenticación, consulta, validación, tokens, errores HTTP, disponibilidad y respaldo ante un nodo caído. Verifican la capa HTTP y la compatibilidad con la lógica anterior. Además se comprobaron cuatro casos de configuración: secretos sin archivos, rechazo de secretos parciales o cortos y rechazo del arranque de producción sin DATABASE_URL. Se validó la sintaxis del script y las sentencias del adaptador con el parser de PostgreSQL. Estas comprobaciones no acreditan integración con PostgreSQL ni concurrencia contra Supabase. La conexión real, el arranque de los usuarios y los bloqueos deben validarse con el despliegue; las pruebas concurrentes se harán antes de publicar ventas en la interfaz.
+Consultar `DESPLIEGUE.md`. Se conserva el esquema de `database/01_tablas.sql`; esta actualización no requiere repetirlo. Las credenciales solo se configuran en Render. No se necesita Supabase Auth, anon key ni service_role key: únicamente el backend se conecta a PostgreSQL con psycopg. Mantener la Data API desactivada y las tablas con RLS como están configuradas.
 
-Comando de regresión opcional: python -m unittest discover -s tests -v.
+Verificación automatizada: 33 pruebas de HTTP, autenticación, roles, reintentos, existencias, concurrencia con SQLite temporal, configuración y diagnóstico PostgreSQL. Utilizan un objeto remoto real para las pruebas HTTP. No acreditan concurrencia ni integración contra el PostgreSQL del usuario. La sintaxis de JavaScript se revisó con `node --check frontend/app.js`. La revisión visual automatizada no pudo completarse por un fallo del navegador de vista previa; comprobar la interfaz en Render tras actualizar.
 
-Sin DATABASE_URL, servidor.py e iniciar_cluster.py mantienen la alternativa SQLite para diagnóstico y compatibilidad. El arranque de producción backend.iniciar_servidor exige DATABASE_URL y los secretos; no permite un despliegue con SQLite por accidente.
+Comando de regresión: `python -m unittest discover -s tests -v`.
 
-## Archivos principales
-
-- inventario_postgres.py: persistencia y transacciones PostgreSQL.
-- persistencia.py: selección del almacén según DATABASE_URL.
-- servicio_remoto.py: operaciones, roles y comprobación de disponibilidad.
-- backend/app.py: rutas HTTP.
-- backend/conexion.py: comunicación con los objetos remotos.
-- backend/iniciar_servidor.py: arranque y cierre de los tres nodos y Gunicorn.
-- configuracion.py: claves desde variables del alojamiento.
-- Dockerfile y render.yaml: construcción y configuración de Render.
-
-Python 3.10 o posterior. La imagen de despliegue utiliza Python 3.12. Los archivos SQLite y los clientes de consola anteriores se conservan para compatibilidad, pero no constituyen la persistencia del despliegue de InvAx.
+El arranque de producción es `python -m backend.iniciar_servidor`, incluido en Dockerfile. Exige PostgreSQL y secretos por variables de entorno. Los clientes anteriores y la alternativa SQLite se conservan para diagnóstico y compatibilidad, no para la persistencia del despliegue.
