@@ -1,7 +1,9 @@
 import hashlib
 import json
 import os
+import re
 from contextlib import contextmanager
+from urllib.parse import quote
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
@@ -21,7 +23,7 @@ def diagnostico_postgres(error):
     texto = str(error).lower()
     if "tenant or user not found" in texto:
         return "PG_POOLER: el host o el usuario no corresponden al proyecto. Copia nuevamente el URI de Session pooler desde Supabase."
-    if estado == "28P01" or "password authentication failed" in texto or "sasl authentication failed" in texto:
+    if estado == "28P01" or any(frase in texto for frase in ("password authentication failed", "sasl authentication failed", "wrong password", "invalid password")):
         return "PG_AUTH: PostgreSQL rechazó las credenciales. Revisa la contraseña de la base y su codificación en DATABASE_URL."
     if estado == "28000":
         return "PG_AUTH: PostgreSQL rechazó la autorización de conexión. Revisa usuario, permisos y configuración de red."
@@ -48,6 +50,31 @@ def diagnostico_postgres(error):
     if estado and len(estado) == 5 and estado.isalnum():
         return f"PG_ERROR: PostgreSQL devolvió SQLSTATE {estado}."
     return "PG_ERROR: PostgreSQL rechazó la configuración u operación. Revisa el URI y las tablas de InvAx."
+
+
+def detalle_conexion_seguro(error, database_url, database_password=None):
+    """Conserva el motivo de conexión y oculta URI y contraseñas conocidas."""
+    texto = str(error)
+    secretos = {database_url}
+    if database_password:
+        secretos.add(database_password)
+    try:
+        clave_uri = conninfo_to_dict(database_url).get("password")
+        if clave_uri:
+            secretos.add(clave_uri)
+    except psycopg.Error:
+        pass
+    for secreto in list(secretos):
+        if secreto:
+            secretos.add(quote(secreto, safe=""))
+            secretos.add(secreto.replace("\\", "\\\\").replace("'", "\\'"))
+    for secreto in sorted(secretos, key=len, reverse=True):
+        if secreto:
+            texto = texto.replace(secreto, "[OCULTO]")
+    texto = re.sub(r"(?i)postgres(?:ql)?://[^\s\"<>]+", "[URI OCULTO]", texto)
+    texto = re.sub(r'''(?ix)\bpassword\s*=\s*(?:'(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[^\s;]+)''', "password=[OCULTO]", texto)
+    texto = re.sub(r"[\x00-\x1f\x7f]+", " ", texto)
+    return texto[:1000]
 
 
 def validar_database_url(database_url, database_password=None):
@@ -81,11 +108,16 @@ class InventarioPostgres(InventarioDistribuido):
         if password:
             opciones["password"] = password
         try:
-            with psycopg.connect(
-                self.database_url, row_factory=dict_row, connect_timeout=8,
-                sslmode="require", prepare_threshold=None,
-                **opciones,
-            ) as conexion:
+            try:
+                conexion = psycopg.connect(
+                    self.database_url, row_factory=dict_row, connect_timeout=8,
+                    sslmode="require", prepare_threshold=None,
+                    **opciones,
+                )
+            except psycopg.Error as error:
+                detalle = detalle_conexion_seguro(error, self.database_url, password)
+                raise AlmacenNoDisponible(f"{diagnostico_postgres(error)} Detalle de conexión: {detalle}") from None
+            with conexion:
                 conexion.execute("SET LOCAL lock_timeout = '4s'")
                 conexion.execute("SET LOCAL statement_timeout = '8s'")
                 yield conexion
