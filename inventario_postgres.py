@@ -3,6 +3,7 @@ import json
 from contextlib import contextmanager
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from inventario import InventarioDistribuido
@@ -13,10 +14,59 @@ class AlmacenNoDisponible(Exception):
     """Error de persistencia sin exponer credenciales ni detalles de conexión."""
 
 
+def diagnostico_postgres(error):
+    """Clasifica el error sin devolver su texto, consultas ni credenciales."""
+    estado = error.sqlstate
+    texto = str(error).lower()
+    if "tenant or user not found" in texto:
+        return "PG_POOLER: el host o el usuario no corresponden al proyecto. Copia nuevamente el URI de Session pooler desde Supabase."
+    if estado == "28P01" or "password authentication failed" in texto or "sasl authentication failed" in texto:
+        return "PG_AUTH: PostgreSQL rechazó las credenciales. Revisa la contraseña de la base y su codificación en DATABASE_URL."
+    if estado == "28000":
+        return "PG_AUTH: PostgreSQL rechazó la autorización de conexión. Revisa usuario, permisos y configuración de red."
+    if "could not translate host name" in texto or "failed to resolve" in texto or "name or service not known" in texto:
+        return "PG_DNS: no se pudo resolver el servidor de DATABASE_URL. Revisa el host del pooler."
+    if "ssl" in texto or "certificate" in texto or "tls" in texto:
+        return "PG_TLS: no se pudo establecer la conexión cifrada. Revisa la configuración TLS de PostgreSQL."
+    if estado == "55P03":
+        return "PG_LOCK: se agotó el tiempo de espera de un bloqueo en PostgreSQL."
+    if estado == "57014":
+        return "PG_QUERY_TIMEOUT: PostgreSQL canceló la consulta o se agotó su tiempo de ejecución."
+    if "timeout" in texto or "timed out" in texto or "timeout expired" in texto:
+        return "PG_TIMEOUT: se agotó el tiempo de conexión. Comprueba que Supabase esté activo y que DATABASE_URL use el Session pooler correcto."
+    if estado == "42P01":
+        return "PG_TABLA: falta una tabla de InvAx. Comprueba el script de tablas en el mismo proyecto de Supabase."
+    if estado == "42703":
+        return "PG_COLUMNA: las columnas de PostgreSQL no coinciden con las tablas esperadas por InvAx."
+    if estado == "42501":
+        return "PG_PERMISOS: el usuario de conexión no tiene permisos suficientes sobre las tablas."
+    if estado == "53300" or "max client connections" in texto:
+        return "PG_LIMITE: se alcanzó el límite de conexiones de PostgreSQL o del pooler."
+    if isinstance(error, psycopg.OperationalError):
+        return "PG_CONEXION: PostgreSQL no pudo completar la conexión u operación. Revisa el estado de Supabase y su acceso por red."
+    if estado and len(estado) == 5 and estado.isalnum():
+        return f"PG_ERROR: PostgreSQL devolvió SQLSTATE {estado}."
+    return "PG_ERROR: PostgreSQL rechazó la configuración u operación. Revisa el URI y las tablas de InvAx."
+
+
+def validar_database_url(database_url):
+    if not isinstance(database_url, str) or not database_url.startswith(("postgresql://", "postgres://")):
+        raise AlmacenNoDisponible("PG_CONFIG: DATABASE_URL debe contener únicamente un URI PostgreSQL, sin comillas ni el prefijo DATABASE_URL=.")
+    try:
+        parametros = conninfo_to_dict(database_url)
+    except psycopg.Error:
+        raise AlmacenNoDisponible("PG_CONFIG: el URI de DATABASE_URL no es válido. Comprueba la codificación de caracteres especiales en la contraseña.") from None
+    if not all(parametros.get(campo) for campo in ("host", "user", "password", "dbname")):
+        raise AlmacenNoDisponible("PG_CONFIG: faltan host, usuario, contraseña o base de datos en DATABASE_URL.")
+    if parametros["password"] == "[YOUR-PASSWORD]":
+        raise AlmacenNoDisponible("PG_CONFIG: reemplaza [YOUR-PASSWORD], incluidos los corchetes, por la contraseña codificada de la base de datos.")
+
+
 class InventarioPostgres(InventarioDistribuido):
     """Inventario compartido mediante transacciones PostgreSQL."""
 
     def __init__(self, database_url):
+        validar_database_url(database_url)
         self.database_url = database_url
         self.verificar_esquema()
 
@@ -32,8 +82,8 @@ class InventarioPostgres(InventarioDistribuido):
                 yield conexion
         except psycopg.errors.UniqueViolation:
             raise
-        except psycopg.Error:
-            raise AlmacenNoDisponible("No fue posible completar la operación en PostgreSQL.") from None
+        except psycopg.Error as error:
+            raise AlmacenNoDisponible(diagnostico_postgres(error)) from None
 
     @contextmanager
     def _transaccion_escritura(self):
