@@ -33,6 +33,13 @@ class ServicioInventarioRemoto:
             "id_objeto": id(self),
         }
 
+    def comprobar_disponibilidad(self):
+        try:
+            self.inventario.obtener_inventario()
+        except Exception:
+            return self._respuesta(False, "La persistencia no está disponible.")
+        return self._respuesta(True, "Objeto remoto y persistencia disponibles.")
+
     def autenticar(self, usuario, clave):
         usuario = str(usuario or "").strip()
         clave = str(clave or "")

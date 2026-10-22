@@ -1,34 +1,52 @@
-# Primera etapa en un servidor
+# InvAx en Render Free y Supabase Free
 
-Esta entrega prepara la API para ejecutarse en un servidor Linux con Docker o Python. No incluye aún el frontend ni acredita una publicación: faltan la cuenta de alojamiento y el repositorio de destino.
+## 1. Actualizar GitHub
 
-## Componentes
+Extraer InvAx_Supabase_Etapa2.zip y subir el contenido de la carpeta InvAx a la raíz de AxelHerESC/InvAx, reemplazando los archivos con el mismo nombre. Dockerfile y render.yaml deben quedar en la raíz. No subir el ZIP como archivo ni crear una carpeta InvAx adicional dentro del repositorio.
 
-Internet → terminación HTTPS del alojamiento → API Gunicorn → S1/S2/S3 en localhost → disco persistente.
+Mensaje sugerido: Adaptar InvAx a PostgreSQL de Supabase.
 
-Los tres objetos corren dentro de la misma instancia. Sus puertos 5100–5102 no se publican. Solo el puerto indicado en PORT recibe tráfico HTTP. Una única instancia mantiene el bloqueo de login de cada objeto y la base compartida; no se debe activar escalamiento horizontal con esta persistencia.
+## 2. Obtener la conexión de Supabase
 
-## Configuración del alojamiento
+En el proyecto InvAx, pulsar Connect y elegir Session pooler. Usar el URI del panel con el host pooler y el puerto 5432. Esta alternativa permite conectarse desde redes IPv4. Conservar la cadena en privado y colocar la contraseña real en lugar de [YOUR-PASSWORD]. Si la contraseña contiene caracteres reservados de una URL, debe codificarse al formar el URI; nunca codificar el URI completo ni compartir la contraseña aquí.
 
-- Construcción: Dockerfile en la raíz del proyecto.
-- Inicio: ya definido en Dockerfile.
-- PORT: el puerto asignado por el proveedor; el valor por defecto es 8080.
-- INVENTARIO_DATA_DIR: /app/data.
-- Disco persistente: montado en /app/data y con permiso de escritura para el usuario inventario. Verificar el UID y permisos del montaje según el proveedor.
-- INVENTARIO_ADMIN_PASSWORD e INVENTARIO_VENDEDOR_PASSWORD: contraseñas distintas, propias y de al menos 12 caracteres, configuradas como secretos del alojamiento.
-- HTTPS: proporcionado por el alojamiento o por un proxy con certificado en un VPS.
-- Ruta de comprobación: /api/salud. Solo indica que la API responde; validar también login y productos.
+No se necesitan SUPABASE_URL, anon key ni service_role key para este backend, porque se conecta a PostgreSQL con psycopg.
 
-Las contraseñas solo crean los usuarios si la base no contiene ninguno. Modificar variables no cambia contraseñas de usuarios ya existentes. La base, el secreto de tokens y la clave de conexión se conservan juntos en el disco persistente. No se incluyen en GitHub.
+## 3. Crear el servicio mediante Blueprint
 
-El comando de inicio es `python -m backend.iniciar_servidor`. Inicia los tres objetos, espera su disponibilidad y después arranca Gunicorn. Si un proceso termina, detiene el conjunto y sale con error para que el alojamiento lo reinicie. No imprime contraseñas.
+Crear una cuenta de Render y conectar el repositorio privado InvAx. En New → Blueprint seleccionar el repositorio y la rama que contiene render.yaml. El Blueprint declara un único Web Service con plan free. Revisar que no se propongan servicios de pago.
 
-## Comprobación una vez desplegado
+Render pedirá estas variables privadas:
 
-Abrir https://TU-DOMINIO/api/salud. Después probar POST /api/login con las credenciales configuradas y GET /api/productos con el token recibido. Reiniciar la instancia y verificar que la sesión sigue siendo reconocida y los datos permanecen.
+| Variable | Contenido |
+| --- | --- |
+| DATABASE_URL | URI de Session pooler, con la contraseña de PostgreSQL |
+| INVENTARIO_ADMIN_PASSWORD | Contraseña propia de al menos 12 caracteres para admin |
+| INVENTARIO_VENDEDOR_PASSWORD | Otra contraseña propia de al menos 12 caracteres para vendedor |
 
-La interfaz se incorporará a esta misma aplicación en una etapa posterior. Entonces la dirección raíz mostrará la página del inventario. Por ahora, la entrega pública consiste en la API.
+El Blueprint genera automáticamente INVENTARIO_AUTHKEY e INVENTARIO_TOKEN_SECRET. No cambiarlas en cada despliegue: el secreto de tokens mantiene la validez de las sesiones hasta su vencimiento. Son distintas de las contraseñas de los usuarios.
 
-## Estado de verificación
+Si se elige Web Service manualmente en lugar de Blueprint, se deben generar y configurar también esas dos variables, con valores aleatorios distintos de al menos 32 caracteres cada uno. Seleccionar Docker y Free; usar /api/listo como health check. No cambiar Docker Command, porque el Dockerfile ya incluye el comando de inicio.
 
-La comprobación del paquete se realiza en un proceso Linux con Gunicorn y los tres nodos. La imagen Docker y los permisos del disco del proveedor deben comprobarse al elegir el alojamiento. No hay una URL pública todavía.
+Las contraseñas admin/vendedor solo se usan para la primera creación. Modificar las variables posteriormente no reemplaza contraseñas almacenadas en la base. No usar las contraseñas de demostración de la práctica anterior.
+
+## 4. Comprobar el despliegue
+
+1. Revisar los logs de construcción y arranque sin copiar credenciales.
+2. Abrir https://TU-SERVICIO.onrender.com/api/salud.
+3. Abrir https://TU-SERVICIO.onrender.com/api/listo: debe responder exito=true y el identificador de un servidor.
+4. Probar el login y la consulta protegida en la etapa siguiente.
+5. Comprobar en Supabase que se crearon admin y vendedor con hashes.
+6. Reiniciar el servicio y verificar que los productos y usuarios permanecen.
+
+El proyecto todavía no incluye una página web en /. Esa respuesta 404 no indica un fallo en la API.
+
+## Seguridad y límites
+
+- La API queda accesible mediante HTTPS en Render. La conexión PostgreSQL usa sslmode=require para cifrar el tráfico.
+- Ninguna contraseña ni URI con credenciales se escribe en GitHub.
+- RLS está activado en las tablas y no se dieron permisos a anon ni authenticated. La conexión administrativa del backend tiene permisos elevados y debe permanecer privada.
+- Los tres objetos BaseManager solo escuchan en localhost; no se debe publicar sus puertos.
+- El bloqueo de intentos de login es por objeto y se reinicia junto con los procesos. No es un bloqueo global persistente.
+- Render Free puede suspender la aplicación por inactividad. Supabase conserva la base independientemente del disco temporal de Render; su plan Free también puede pausar proyectos inactivos.
+- La integración real de PostgreSQL sigue pendiente hasta completar los pasos anteriores. Las pruebas de concurrencia contra PostgreSQL precederán a las ventas por HTTP.

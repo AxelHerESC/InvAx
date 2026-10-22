@@ -37,8 +37,21 @@ def _guardar_privado(ruta: Path, contenido: str):
         pass
 
 
+def _secretos_entorno():
+    authkey = os.environ.get("INVENTARIO_AUTHKEY")
+    token_secret = os.environ.get("INVENTARIO_TOKEN_SECRET")
+    if not authkey and not token_secret:
+        return None
+    if not authkey or not token_secret or len(authkey) < 32 or len(token_secret) < 32:
+        raise ValueError("Configura INVENTARIO_AUTHKEY e INVENTARIO_TOKEN_SECRET con al menos 32 caracteres cada uno.")
+    return {"authkey": authkey.encode("utf-8"), "token_secret": token_secret.encode("utf-8")}
+
+
 def preparar_secretos():
     """Crea secretos compartidos una sola vez y devuelve la configuración del servidor."""
+    secretos = _secretos_entorno()
+    if secretos:
+        return secretos
     if RUTA_SEGURIDAD_SERVIDOR.exists() and RUTA_CLAVE_CLIENTE.exists():
         return cargar_secretos_servidor()
 
@@ -59,6 +72,9 @@ def preparar_secretos():
 
 
 def cargar_secretos_servidor():
+    secretos = _secretos_entorno()
+    if secretos:
+        return secretos
     if not RUTA_SEGURIDAD_SERVIDOR.exists():
         raise FileNotFoundError(
             "No existe la configuración de seguridad. Ejecuta iniciar_cluster.py primero."
@@ -71,6 +87,11 @@ def cargar_secretos_servidor():
 
 
 def cargar_authkey_cliente():
+    authkey = os.environ.get("INVENTARIO_AUTHKEY")
+    if authkey:
+        if len(authkey) < 32:
+            raise ValueError("INVENTARIO_AUTHKEY debe tener al menos 32 caracteres.")
+        return authkey.encode("utf-8")
     if not RUTA_CLAVE_CLIENTE.exists():
         raise FileNotFoundError(
             "No existe la clave de conexión. Ejecuta iniciar_cluster.py primero."

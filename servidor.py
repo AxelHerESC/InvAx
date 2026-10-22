@@ -7,7 +7,7 @@ from configuracion import (
     RUTA_BD,
     cargar_secretos_servidor,
 )
-from inventario import InventarioDistribuido
+from persistencia import crear_inventario
 from servicio_remoto import ServicioInventarioRemoto
 
 
@@ -38,7 +38,7 @@ def main():
     args = leer_argumentos()
     secretos = cargar_secretos_servidor()
 
-    inventario = InventarioDistribuido(args.bd)
+    inventario = crear_inventario(args.bd)
     nuevos = inventario.asegurar_usuarios_iniciales(
         CLAVE_ADMIN_INICIAL, CLAVE_VENDEDOR_INICIAL
     )
@@ -63,7 +63,7 @@ def main():
     print(f"Dirección: {args.host}:{args.puerto}")
     print("Objeto publicado: ServicioInventarioRemoto")
     print("Invocación: proxy de multiprocessing.managers.BaseManager")
-    print("Persistencia compartida: SQLite WAL")
+    print(f"Persistencia: {type(inventario).__name__}")
     print("Seguridad: authkey + PBKDF2 + tokens HMAC + RBAC + auditoría")
     if nuevos:
         print("Usuarios iniciales creados en la base de datos.")
