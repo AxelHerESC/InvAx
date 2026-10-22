@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from contextlib import contextmanager
 
 import psycopg
@@ -49,16 +50,18 @@ def diagnostico_postgres(error):
     return "PG_ERROR: PostgreSQL rechazó la configuración u operación. Revisa el URI y las tablas de InvAx."
 
 
-def validar_database_url(database_url):
+def validar_database_url(database_url, database_password=None):
     if not isinstance(database_url, str) or not database_url.startswith(("postgresql://", "postgres://")):
         raise AlmacenNoDisponible("PG_CONFIG: DATABASE_URL debe contener únicamente un URI PostgreSQL, sin comillas ni el prefijo DATABASE_URL=.")
     try:
         parametros = conninfo_to_dict(database_url)
     except psycopg.Error:
         raise AlmacenNoDisponible("PG_CONFIG: el URI de DATABASE_URL no es válido. Comprueba la codificación de caracteres especiales en la contraseña.") from None
-    if not all(parametros.get(campo) for campo in ("host", "user", "password", "dbname")):
-        raise AlmacenNoDisponible("PG_CONFIG: faltan host, usuario, contraseña o base de datos en DATABASE_URL.")
-    if parametros["password"] == "[YOUR-PASSWORD]":
+    if not all(parametros.get(campo) for campo in ("host", "user", "dbname")):
+        raise AlmacenNoDisponible("PG_CONFIG: faltan host, usuario o base de datos en DATABASE_URL.")
+    if not database_password and not parametros.get("password"):
+        raise AlmacenNoDisponible("PG_CONFIG: configura DATABASE_PASSWORD con la contraseña original de PostgreSQL, sin codificar.")
+    if not database_password and parametros.get("password") == "[YOUR-PASSWORD]":
         raise AlmacenNoDisponible("PG_CONFIG: reemplaza [YOUR-PASSWORD], incluidos los corchetes, por la contraseña codificada de la base de datos.")
 
 
@@ -66,16 +69,22 @@ class InventarioPostgres(InventarioDistribuido):
     """Inventario compartido mediante transacciones PostgreSQL."""
 
     def __init__(self, database_url):
-        validar_database_url(database_url)
+        self.database_password = os.environ.get("DATABASE_PASSWORD")
+        validar_database_url(database_url, self.database_password)
         self.database_url = database_url
         self.verificar_esquema()
 
     @contextmanager
     def _conectar(self):
+        opciones = {}
+        password = getattr(self, "database_password", None)
+        if password:
+            opciones["password"] = password
         try:
             with psycopg.connect(
                 self.database_url, row_factory=dict_row, connect_timeout=8,
                 sslmode="require", prepare_threshold=None,
+                **opciones,
             ) as conexion:
                 conexion.execute("SET LOCAL lock_timeout = '4s'")
                 conexion.execute("SET LOCAL statement_timeout = '8s'")
