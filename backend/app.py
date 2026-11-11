@@ -1,4 +1,7 @@
 from functools import wraps
+from datetime import datetime, timezone
+import hashlib
+import json
 from pathlib import Path
 import re
 from uuid import UUID
@@ -23,7 +26,7 @@ def create_app(servidores=None, authkey=None):
         respuesta.headers["X-Content-Type-Options"] = "nosniff"
         respuesta.headers["X-Frame-Options"] = "DENY"
         respuesta.headers["Referrer-Policy"] = "same-origin"
-        respuesta.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        respuesta.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; worker-src 'self'; manifest-src 'self'"
         return respuesta
 
     @app.errorhandler(ClusterNoDisponible)
@@ -70,6 +73,16 @@ def create_app(servidores=None, authkey=None):
     def inicio():
         return send_from_directory(FRONTEND, "index.html")
 
+    @app.get("/sw.js")
+    def service_worker():
+        respuesta = send_from_directory(FRONTEND, "sw.js", mimetype="application/javascript")
+        respuesta.headers["Service-Worker-Allowed"] = "/"
+        return respuesta
+
+    @app.get("/manifest.webmanifest")
+    def manifiesto():
+        return send_from_directory(FRONTEND, "manifest.webmanifest", mimetype="application/manifest+json")
+
     @app.get("/api/salud")
     def salud():
         return jsonify(exito=True, servicio="InvAx", etapa=3, mensaje="Backend HTTP activo.")
@@ -95,7 +108,17 @@ def create_app(servidores=None, authkey=None):
     @app.get("/api/productos")
     @autenticada
     def productos():
-        return responder(cluster.invocar("listar_inventario", g.token), fallo=401)
+        resultado = cluster.invocar("listar_inventario", g.token)
+        if resultado.get("exito"):
+            filas = [[p["id"], p["nombre"], f"{p['precio']:.2f}", p["cantidad"], p["version"]]
+                     for p in sorted(resultado["productos"], key=lambda p: p["id"])]
+            documento = json.dumps(filas, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+            resultado["integridad"] = {
+                "algoritmo": "SHA-256", "esquema": 1,
+                "sha256": hashlib.sha256(documento).hexdigest(), "total": len(filas),
+                "actualizado_en": datetime.now(timezone.utc).isoformat(),
+            }
+        return responder(resultado, fallo=401)
 
     @app.get("/api/productos/<id_producto>")
     @autenticada

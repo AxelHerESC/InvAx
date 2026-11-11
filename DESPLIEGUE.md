@@ -1,3 +1,7 @@
+# Actualización Práctica 07
+
+Para esta versión usa `InvAx_Practica07_Final.zip` y las instrucciones de `PRACTICA07.md`. Conserva las variables de Render y el esquema de Supabase. Las instrucciones siguientes documentan el despliegue inicial.
+
 # Actualizar InvAx en GitHub y Render
 
 ## Servicio existente

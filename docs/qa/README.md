@@ -1,0 +1,1 @@
+La imagen consulta-offline-qa.png corresponde a una sesión ficticia con SQLite temporal, después de detener el servidor de pruebas. No es una captura de Render ni demuestra datos de Supabase. Fue tomada antes del ajuste final de los textos del encabezado y las etiquetas de existencias de referencia.

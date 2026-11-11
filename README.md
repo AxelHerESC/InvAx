@@ -1,5 +1,7 @@
 # InvAx
 
+La Práctica 07 incorpora PWA instalable, Service Worker y catálogo de referencia en IndexedDB. Consulta `PRACTICA07.md` para arquitectura, cambios, pruebas y despliegue. Se mantienen las rutas `/api/` y los tokens HMAC propios del proyecto.
+
 Inventario escolar con frontend HTML/CSS/JavaScript, API Flask y objetos remotos Python. Se despliega en un Web Service de Render Free y guarda sus datos en PostgreSQL de Supabase. La interfaz se sirve desde `/` en el mismo dominio que la API; no requiere compilar Node ni alojar el frontend por separado.
 
 ## Funciones
@@ -50,7 +52,7 @@ La cantidad debe ser un entero entre 1 y 10000. Una operación rechazada por exi
 
 Consultar `DESPLIEGUE.md`. Se conserva el esquema de `database/01_tablas.sql`; esta actualización no requiere repetirlo. Las credenciales solo se configuran en Render. No se necesita Supabase Auth, anon key ni service_role key: únicamente el backend se conecta a PostgreSQL con psycopg. Mantener la Data API desactivada y las tablas con RLS como están configuradas.
 
-Verificación automatizada: 33 pruebas de HTTP, autenticación, roles, reintentos, existencias, concurrencia con SQLite temporal, configuración y diagnóstico PostgreSQL. Utilizan un objeto remoto real para las pruebas HTTP. No acreditan concurrencia ni integración contra el PostgreSQL del usuario. La sintaxis de JavaScript se revisó con `node --check frontend/app.js`. La revisión visual automatizada no pudo completarse por un fallo del navegador de vista previa; comprobar la interfaz en Render tras actualizar.
+Verificación automatizada previa a P07: 33 pruebas de HTTP, autenticación, roles, reintentos, existencias, concurrencia con SQLite temporal, configuración y diagnóstico PostgreSQL. Utilizan un objeto remoto real para las pruebas HTTP. No acreditan concurrencia ni integración contra el PostgreSQL del usuario. La sintaxis de JavaScript se revisó con `node --check frontend/app.js`. Para la ampliación P07 se ejecutaron 38 pruebas Python y 10 de JavaScript, además de revisión visual con servidor temporal. Las evidencias y límites están en PRACTICA07.md.
 
 Comando de regresión: `python -m unittest discover -s tests -v`.
 

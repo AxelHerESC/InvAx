@@ -90,6 +90,7 @@ class ServicioInventarioRemoto:
             "usuario": datos["usuario"],
             "rol": datos["rol"],
             "expira_en": DURACION_SESION_SEGUNDOS,
+            "expira_en_unix": verificar_token(token, self.secreto_token)["exp"],
             "servidor": self.servidor_id,
         }
 
@@ -97,7 +98,7 @@ class ServicioInventarioRemoto:
         sesion = self._autorizar(token)
         if not sesion["exito"]:
             return sesion
-        return self._respuesta(True, "Sesión válida.", usuario=sesion["usuario"], rol=sesion["rol"])
+        return self._respuesta(True, "Sesión válida.", usuario=sesion["usuario"], rol=sesion["rol"], expira_en_unix=verificar_token(token, self.secreto_token)["exp"])
 
     def listar_inventario(self, token):
         sesion = self._autorizar(token)

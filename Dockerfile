@@ -4,7 +4,7 @@ WORKDIR /app
 COPY requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements-servidor.txt && useradd --create-home inventario
 COPY . .
-RUN mkdir -p /app/data && chown -R inventario:inventario /app
+RUN python scripts/preparar_pwa.py && mkdir -p /app/data && chown -R inventario:inventario /app
 USER inventario
 EXPOSE 8080
 CMD ["python", "-m", "backend.iniciar_servidor"]

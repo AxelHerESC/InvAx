@@ -1,3 +1,5 @@
+import hashlib
+import json
 import multiprocessing
 import secrets
 import tempfile
@@ -68,6 +70,33 @@ class PruebasBackend(unittest.TestCase):
         for asset in ("app.js", "styles.css", "favicon.svg"):
             with self.cliente.get("/assets/" + asset) as r:
                 self.assertEqual(r.status_code, 200)
+
+    def test_recursos_pwa_y_alcance(self):
+        with self.cliente.get("/manifest.webmanifest") as r:
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.json["scope"], "/")
+            self.assertEqual(r.json["display"], "standalone")
+            for icon in r.json["icons"]:
+                with self.cliente.get(icon["src"]) as image:
+                    self.assertEqual(image.status_code, 200)
+                    self.assertTrue(image.data.startswith(b"\x89PNG"))
+        with self.cliente.get("/sw.js") as r:
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.headers["Service-Worker-Allowed"], "/")
+            self.assertEqual(r.headers["Cache-Control"], "no-store")
+            self.assertIn("worker-src 'self'", r.headers["Content-Security-Policy"])
+
+    def test_catalogo_integridad_y_vigencia_sesion(self):
+        h = self.acceso()
+        r = self.cliente.get("/api/productos", headers=h)
+        filas = [[p["id"], p["nombre"], f"{p['precio']:.2f}", p["cantidad"], p["version"]]
+                 for p in sorted(r.json["productos"], key=lambda p: p["id"])]
+        documento = json.dumps(filas, ensure_ascii=False, separators=(",", ":")).encode()
+        self.assertEqual(r.json["integridad"]["sha256"], hashlib.sha256(documento).hexdigest())
+        self.assertEqual(r.json["integridad"]["total"], len(filas))
+        sesion = self.cliente.get("/api/sesion", headers=h)
+        self.assertIsInstance(sesion.json["expira_en_unix"], int)
+        self.assertEqual(self.cliente.get("/api/productos").status_code, 401)
 
     def test_sesion_y_estado_de_servidores(self):
         h = self.acceso()
