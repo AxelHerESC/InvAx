@@ -1,0 +1,58 @@
+name: InvAx P08
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test-ci-only-password
+          POSTGRES_DB: invax_test_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d invax_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Dependencias de prueba
+        run: pip install -r requirements-dev.txt
+      - name: TLS del PostgreSQL desechable de CI
+        env:
+          PGCID: ${{ job.services.postgres.id }}
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/server.key" -out "$RUNNER_TEMP/server.crt" -days 1 -subj '/CN=localhost' 2>/dev/null
+          docker cp "$RUNNER_TEMP/server.key" "$PGCID:/var/lib/postgresql/data/server.key"
+          docker cp "$RUNNER_TEMP/server.crt" "$PGCID:/var/lib/postgresql/data/server.crt"
+          docker exec "$PGCID" chown postgres:postgres /var/lib/postgresql/data/server.key /var/lib/postgresql/data/server.crt
+          docker exec "$PGCID" chmod 600 /var/lib/postgresql/data/server.key
+          docker exec "$PGCID" psql -U postgres -d invax_test_ci -c 'ALTER SYSTEM SET ssl = on'
+          docker restart "$PGCID"
+          for n in {1..30}; do docker exec "$PGCID" pg_isready -U postgres -d invax_test_ci && break; sleep 1; done
+      - name: API, permisos, integración HTTP y concurrencia PostgreSQL
+        env:
+          INVAX_TEST_DATABASE_URL: postgresql://postgres:test-ci-only-password@127.0.0.1:5432/invax_test_ci
+        run: pytest tests -q
+      - name: PWA y frontend
+        run: |
+          npm ci --prefix tests/frontend
+          npm test --prefix tests/frontend
+          for file in frontend/*.js; do node --check "$file"; done
+          python scripts/preparar_pwa.py --check
+      - name: Configuración Compose
+        env:
+          INVAX_CLUSTER_TOKEN: test-ci-only-cluster-00000000000000000000
+          INVENTARIO_TOKEN_SECRET: test-ci-only-token-000000000000000000000
+          AUTH_DATABASE_URL: postgresql://invax_auth:only-test@db/invax_test_ci
+          AUTH_DATABASE_PASSWORD: only-test
+          PRODUCTOS_DATABASE_URL: postgresql://invax_productos:only-test@db/invax_test_ci
+          PRODUCTOS_DATABASE_PASSWORD: only-test
+        run: docker compose -f compose.microservices.yaml config --quiet
+      - name: Construcción de imagen independiente configurable por servicio
+        run: docker build -f deploy/microservices/Dockerfile -t invax-p08:ci .
