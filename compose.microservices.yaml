@@ -1,0 +1,75 @@
+x-base: &base
+  build:
+    context: .
+    dockerfile: deploy/microservices/Dockerfile
+  restart: unless-stopped
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2)"]
+    interval: 15s
+    timeout: 4s
+    retries: 5
+    start_period: 30s
+services:
+  auth:
+    <<: *base
+    environment:
+      INVAX_SERVICE: auth
+      INVAX_CLUSTER_TOKEN: ${INVAX_CLUSTER_TOKEN:?Configura el secreto interno}
+      INVENTARIO_TOKEN_SECRET: ${INVENTARIO_TOKEN_SECRET:?Conserva el secreto de firma}
+      DATABASE_URL: ${AUTH_DATABASE_URL:?Configura el rol invax_auth}
+      DATABASE_PASSWORD: ${AUTH_DATABASE_PASSWORD:?Configura su contraseña}
+      INVENTARIO_ADMIN_PASSWORD: ${INVENTARIO_ADMIN_PASSWORD:-}
+      INVENTARIO_VENDEDOR_PASSWORD: ${INVENTARIO_VENDEDOR_PASSWORD:-}
+    networks: [core, salida]
+  productos:
+    <<: *base
+    environment:
+      INVAX_SERVICE: productos
+      INVAX_CLUSTER_TOKEN: ${INVAX_CLUSTER_TOKEN}
+      AUTH_URL: http://auth:8080
+      DATABASE_URL: ${PRODUCTOS_DATABASE_URL:?Configura el rol invax_productos}
+      DATABASE_PASSWORD: ${PRODUCTOS_DATABASE_PASSWORD:?Configura su contraseña}
+    depends_on:
+      auth: {condition: service_healthy}
+    networks: [core, salida]
+  ventas:
+    <<: *base
+    environment:
+      INVAX_SERVICE: ventas
+      INVAX_CLUSTER_TOKEN: ${INVAX_CLUSTER_TOKEN}
+      AUTH_URL: http://auth:8080
+      PRODUCTOS_URL: http://productos:8080
+    depends_on:
+      productos: {condition: service_healthy}
+    networks: [core]
+  reposiciones:
+    <<: *base
+    environment:
+      INVAX_SERVICE: reposiciones
+      INVAX_CLUSTER_TOKEN: ${INVAX_CLUSTER_TOKEN}
+      AUTH_URL: http://auth:8080
+      PRODUCTOS_URL: http://productos:8080
+    depends_on:
+      productos: {condition: service_healthy}
+    networks: [core]
+  gateway:
+    <<: *base
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      INVAX_SERVICE: gateway
+      INVAX_CLUSTER_TOKEN: ${INVAX_CLUSTER_TOKEN}
+      AUTH_URL: http://auth:8080
+      PRODUCTOS_URL: http://productos:8080
+      VENTAS_URL: http://ventas:8080
+      REPOSICIONES_URL: http://reposiciones:8080
+      INVAX_ALLOWED_ORIGINS: ${INVAX_ALLOWED_ORIGINS:-}
+    depends_on:
+      auth: {condition: service_healthy}
+      productos: {condition: service_healthy}
+      ventas: {condition: service_healthy}
+      reposiciones: {condition: service_healthy}
+    networks: [core, entrada]
+networks:
+  core: {internal: true}
+  salida: {}
+  entrada: {}

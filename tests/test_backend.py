@@ -223,7 +223,7 @@ class PruebasBackend(unittest.TestCase):
         self.assertEqual(r.status_code, 503)
 
     def test_rutas_y_metodos_invalidos(self):
-        for metodo, ruta, esperado in (("get", "/api/no-existe", 404), ("post", "/api/productos", 405)):
+        for metodo, ruta, esperado in (("get", "/api/no-existe", 404), ("post", "/api/productos", 401)):
             r = getattr(self.cliente, metodo)(ruta)
             self.assertEqual(r.status_code, esperado)
             self.assertFalse(r.json["exito"])

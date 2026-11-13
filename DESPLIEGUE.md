@@ -1,3 +1,5 @@
+> **P08:** Para publicar microservicios, usar [GUIA_DESPLIEGUE_P08.md](GUIA_DESPLIEGUE_P08.md). Las instrucciones siguientes corresponden al arranque legacy de una sola instancia; no publican los cinco servicios nuevos.
+
 # Actualización Práctica 07
 
 Para esta versión usa `InvAx_Practica07_Final.zip` y las instrucciones de `PRACTICA07.md`. Conserva las variables de Render y el esquema de Supabase. Las instrucciones siguientes documentan el despliegue inicial.

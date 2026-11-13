@@ -1,6 +1,6 @@
 'use strict';
-const VERSION='invax-shell-a53d4322c0e922f7';
-const SHELL=['/','/assets/styles.css','/assets/app.js','/assets/offline-store.js','/assets/pwa.js','/assets/favicon.svg','/manifest.webmanifest','/assets/icons/icon-192.png','/assets/icons/icon-512.png'];
+const VERSION='invax-shell-4de92672df46174d';
+const SHELL=['/','/assets/styles.css','/assets/app.js','/assets/product-admin.js','/assets/offline-store.js','/assets/pwa.js','/assets/favicon.svg','/manifest.webmanifest','/assets/icons/icon-192.png','/assets/icons/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
  try{const cache=await caches.open(VERSION);await cache.addAll(SHELL.map(url=>new Request(url,{cache:'reload',credentials:'omit'})));}
  catch(error){await caches.delete(VERSION);throw error;}

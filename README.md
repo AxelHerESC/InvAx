@@ -1,5 +1,9 @@
 # InvAx
 
+**Práctica 08 implementada:** Gateway y cuatro servicios HTTP independientes, CRUD de productos, historial y permisos SQL separados. Empezar por [PRACTICA08.md](PRACTICA08.md), [despliegue P08](GUIA_DESPLIEGUE_P08.md) y [resultados/evidencias](EVIDENCIAS_P08.md). La nueva arquitectura todavía debe instalarse en Render; el Dockerfile raíz y `render.yaml` conservan el arranque anterior.
+
+Lo que sigue describe la versión legacy P07, disponible para conservar el despliegue existente.
+
 La Práctica 07 incorpora PWA instalable, Service Worker y catálogo de referencia en IndexedDB. Consulta `PRACTICA07.md` para arquitectura, cambios, pruebas y despliegue. Se mantienen las rutas `/api/` y los tokens HMAC propios del proyecto.
 
 Inventario escolar con frontend HTML/CSS/JavaScript, API Flask y objetos remotos Python. Se despliega en un Web Service de Render Free y guarda sus datos en PostgreSQL de Supabase. La interfaz se sirve desde `/` en el mismo dominio que la API; no requiere compilar Node ni alojar el frontend por separado.

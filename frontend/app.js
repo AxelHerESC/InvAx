@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const storage = {get(k){try{return sessionStorage.getItem(k);}catch{return null;}},set(k,v){try{sessionStorage.setItem(k,v);}catch{}},remove(k){try{sessionStorage.removeItem(k);}catch{}}};
-const state = {token:storage.get('invax.token'), usuario:null, rol:null, productos:[], vista:'inventario', movimiento:null, busy:{}, connected:false, context:null, auto:false, snapshot:null, lastResponse:null, retryAt:0, failures:0};
+const state = {token:storage.get('invax.token'), usuario:null, rol:null, productos:[], vista:'inventario', movimiento:null, busy:{}, connected:false, context:null, auto:false, snapshot:null, micro:false, lastResponse:null, retryAt:0, failures:0};
 const moneda = new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:2});
 const numero = new Intl.NumberFormat('es-MX');
 const roles = {administrador:'Administrador', vendedor:'Vendedor'};
@@ -23,7 +23,7 @@ function cerrarSesion(mensaje='',notificar=true){
 async function api(ruta,{method='GET',body,auth=true}={}){
  if(auth&&method!=='GET'&&!state.connected)throw new ApiError('Necesitas una conexión verificada con el inventario para realizar esta operación.',503);
  const tokenSolicitado=state.token;
- const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);
+ const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),30000);
  const headers={Accept:'application/json'};if(body)headers['Content-Type']='application/json';if(auth&&state.token)headers.Authorization='Bearer '+state.token;
  try{
   const res=await fetch(ruta,{method,headers,body:body?JSON.stringify(body):undefined,signal:controller.signal,cache:'no-store',credentials:'omit'});
@@ -55,6 +55,7 @@ async function abrirAplicacion(sesion,local=false){
  }
  $('offline-auto').checked=state.auto;
 
+ if(!local){try{const capabilities=await api('/api/salud',{auth:false});state.micro=capabilities.microservicios===true;}catch{state.micro=false;}}
  $('cuenta-usuario').textContent=state.usuario;$('cuenta-rol').textContent=roles[state.rol]||state.rol;$('avatar').textContent=state.usuario.slice(0,1).toUpperCase();
  document.querySelectorAll('[data-admin]').forEach(el=>el.hidden=state.rol!=='administrador');
  $('acceso').hidden=true;$('aplicacion').hidden=false;document.title='InvAx · Inventario';aviso('aviso-global','');
@@ -65,12 +66,13 @@ async function abrirAplicacion(sesion,local=false){
 function renderProductos(){
  const busqueda=$('buscar-producto').value.trim().toLocaleLowerCase('es');const filtro=$('filtro-stock').value;
  const visibles=state.productos.filter(p=>(p.id+' '+p.nombre).toLocaleLowerCase('es').includes(busqueda)&&(filtro==='todos'||(filtro==='bajo'&&p.cantidad<=5)||(filtro==='agotado'&&p.cantidad===0)));
+ $('nuevo-producto').hidden=!state.micro||state.rol!=='administrador';$('nuevo-producto').disabled=!state.connected;$('ver-movimientos').hidden=!state.micro;$('ver-movimientos').disabled=!state.connected;
  const body=$('productos-body');body.replaceChildren();
  for(const p of visibles){
   const tr=elemento('tr');const td=elemento('td');const producto=elemento('div',undefined,'producto-celda');const icono=elemento('span','▧','producto-mini');icono.setAttribute('aria-hidden','true');const info=elemento('div');const nombre=elemento('button',p.nombre,'producto-detalle');nombre.type='button';nombre.addEventListener('click',()=>mostrarDetalle(p));info.append(nombre,elemento('small',p.id+' · Versión '+p.version));producto.append(icono,info);td.append(producto);tr.append(td,elemento('td',moneda.format(p.precio)));
   const stock=elemento('td');const cantidad=elemento('span',numero.format(p.cantidad),'stock-numero');cantidad.append(elemento('span','unidades'));stock.append(cantidad);tr.append(stock);
   const estado=elemento('td');const badge=elemento('span',undefined,'badge '+(p.cantidad===0?'agotado':p.cantidad<=5?'bajo':''));const punto=elemento('span',undefined,'punto');punto.setAttribute('aria-hidden','true');badge.append(punto,document.createTextNode(p.cantidad===0?'Agotado':p.cantidad<=5?'Stock bajo':'Disponible'));estado.append(badge);tr.append(estado);
-  const accion=elemento('td',undefined,'derecha');const boton=elemento('button',state.rol==='administrador'?'+ Reponer':'Registrar venta','accion-producto');boton.type='button';boton.disabled=!state.connected||(state.rol==='vendedor'&&p.cantidad===0);if(!state.connected)boton.title='Requiere conexión verificada con el inventario';boton.setAttribute('aria-label',(state.rol==='administrador'?'Reponer stock de ':'Vender ')+p.nombre);boton.addEventListener('click',()=>abrirMovimiento(p));accion.append(boton);tr.append(accion);body.append(tr);
+  const accion=elemento('td',undefined,'derecha');const boton=elemento('button',state.rol==='administrador'?'+ Reponer':'Registrar venta','accion-producto');boton.type='button';boton.disabled=!state.connected||(state.rol==='vendedor'&&p.cantidad===0);if(!state.connected)boton.title='Requiere conexión verificada con el inventario';boton.setAttribute('aria-label',(state.rol==='administrador'?'Reponer stock de ':'Vender ')+p.nombre);boton.addEventListener('click',()=>abrirMovimiento(p));accion.append(boton);globalThis.InvAxProductAdmin?.appendActions(accion,p);tr.append(accion);body.append(tr);
  }
  $('productos-vacio').hidden=visibles.length!==0;$('conteo-productos').textContent=visibles.length+' de '+state.productos.length+' productos';
  $('total-productos').textContent=numero.format(state.productos.length);$('total-unidades').textContent=numero.format(state.productos.reduce((t,p)=>t+p.cantidad,0));$('total-bajos').textContent=numero.format(state.productos.filter(p=>p.cantidad<=5).length);$('total-valor').textContent=moneda.format(state.productos.reduce((t,p)=>t+p.precio*p.cantidad,0));

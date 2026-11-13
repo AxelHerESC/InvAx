@@ -15,10 +15,10 @@ from backend.conexion import ClusterNoDisponible, ConexionCluster
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 
 
-def create_app(servidores=None, authkey=None):
+def create_app(servidores=None, authkey=None, cluster=None):
     app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="/assets")
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
-    cluster = ConexionCluster(servidores, authkey)
+    cluster = cluster if cluster is not None else ConexionCluster(servidores, authkey)
 
     @app.after_request
     def proteger_respuesta(respuesta):
@@ -51,13 +51,14 @@ def create_app(servidores=None, authkey=None):
         return ejecutar
 
     def responder(resultado, exito=200, fallo=400):
+        remoto = resultado.pop("_http_status", None)
         if resultado.get("requiere_login"):
             codigo = 401
         elif resultado.get("codigo") == "SIN_PERMISOS":
             codigo = 403
         else:
             codigo = exito if resultado["exito"] else fallo
-        return jsonify(resultado), codigo
+        return jsonify(resultado), remoto or codigo
 
     def cuerpo_json():
         datos = request.get_json()
@@ -83,9 +84,13 @@ def create_app(servidores=None, authkey=None):
     def manifiesto():
         return send_from_directory(FRONTEND, "manifest.webmanifest", mimetype="application/manifest+json")
 
+    @app.get("/api/health")
+    def health_http():
+        return jsonify(exito=True, servicio="gateway" if app.config.get("INVAX_MICROSERVICES") else "InvAx")
+
     @app.get("/api/salud")
     def salud():
-        return jsonify(exito=True, servicio="InvAx", etapa=3, mensaje="Backend HTTP activo.")
+        return jsonify(exito=True, servicio="InvAx", etapa=8 if app.config.get("INVAX_MICROSERVICES") else 3, microservicios=bool(app.config.get("INVAX_MICROSERVICES")), mensaje="Backend HTTP activo.")
 
     @app.get("/api/listo")
     def listo():
@@ -186,5 +191,41 @@ def create_app(servidores=None, authkey=None):
         if not resultado["exito"]:
             return responder(resultado, fallo=401)
         return jsonify(exito=True, servidores=cluster.estado())
+
+    @app.post("/api/productos")
+    @autenticada
+    def crear_producto():
+        return responder(cluster.invocar("crear_producto", g.token, cuerpo_json()), exito=201)
+
+    @app.route("/api/productos/<id_producto>", methods=["PUT", "PATCH"])
+    @autenticada
+    def editar_producto(id_producto):
+        return responder(cluster.invocar("editar_producto", g.token, id_producto, cuerpo_json()))
+
+    @app.delete("/api/productos/<id_producto>")
+    @autenticada
+    def eliminar_producto(id_producto):
+        datos = cuerpo_json()
+        return responder(cluster.invocar("eliminar_producto", g.token, id_producto, datos.get("version")))
+
+    def limite_historial():
+        from werkzeug.exceptions import BadRequest
+        try:
+            valor = int(request.args.get("limite", "30"))
+            if not 1 <= valor <= 100:
+                raise ValueError
+            return valor
+        except ValueError:
+            raise BadRequest("El límite debe estar entre 1 y 100.") from None
+
+    @app.get("/api/ventas")
+    @autenticada
+    def historial_ventas():
+        return responder(cluster.invocar("listar_ventas", g.token, limite_historial()))
+
+    @app.get("/api/reposiciones")
+    @autenticada
+    def historial_reposiciones():
+        return responder(cluster.invocar("listar_reposiciones", g.token, limite_historial()))
 
     return app

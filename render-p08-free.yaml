@@ -1,0 +1,103 @@
+envVarGroups:
+- name: invax-p08-network
+  envVars:
+  - key: INVAX_CLUSTER_TOKEN
+    generateValue: true
+services:
+- type: web
+  name: invax-p08-auth
+  runtime: docker
+  plan: free
+  repo: https://github.com/AxelHerESC/InvAx
+  branch: main
+  dockerfilePath: ./deploy/microservices/Dockerfile
+  dockerContext: .
+  healthCheckPath: /api/health
+  envVars:
+  - fromGroup: invax-p08-network
+  - key: INVAX_SERVICE
+    value: auth
+  - key: DATABASE_URL
+    sync: false
+  - key: DATABASE_PASSWORD
+    sync: false
+  - key: INVENTARIO_TOKEN_SECRET
+    sync: false
+  - key: INVENTARIO_ADMIN_PASSWORD
+    sync: false
+  - key: INVENTARIO_VENDEDOR_PASSWORD
+    sync: false
+- type: web
+  name: invax-p08-productos
+  runtime: docker
+  plan: free
+  repo: https://github.com/AxelHerESC/InvAx
+  branch: main
+  dockerfilePath: ./deploy/microservices/Dockerfile
+  dockerContext: .
+  healthCheckPath: /api/health
+  envVars:
+  - fromGroup: invax-p08-network
+  - key: INVAX_SERVICE
+    value: productos
+  - key: DATABASE_URL
+    sync: false
+  - key: DATABASE_PASSWORD
+    sync: false
+  - key: AUTH_URL
+    sync: false
+- type: web
+  name: invax-p08-ventas
+  runtime: docker
+  plan: free
+  repo: https://github.com/AxelHerESC/InvAx
+  branch: main
+  dockerfilePath: ./deploy/microservices/Dockerfile
+  dockerContext: .
+  healthCheckPath: /api/health
+  envVars:
+  - fromGroup: invax-p08-network
+  - key: INVAX_SERVICE
+    value: ventas
+  - key: AUTH_URL
+    sync: false
+  - key: PRODUCTOS_URL
+    sync: false
+- type: web
+  name: invax-p08-reposiciones
+  runtime: docker
+  plan: free
+  repo: https://github.com/AxelHerESC/InvAx
+  branch: main
+  dockerfilePath: ./deploy/microservices/Dockerfile
+  dockerContext: .
+  healthCheckPath: /api/health
+  envVars:
+  - fromGroup: invax-p08-network
+  - key: INVAX_SERVICE
+    value: reposiciones
+  - key: AUTH_URL
+    sync: false
+  - key: PRODUCTOS_URL
+    sync: false
+- type: web
+  name: invax-p08-gateway
+  runtime: docker
+  plan: free
+  repo: https://github.com/AxelHerESC/InvAx
+  branch: main
+  dockerfilePath: ./deploy/microservices/Dockerfile
+  dockerContext: .
+  healthCheckPath: /api/health
+  envVars:
+  - fromGroup: invax-p08-network
+  - key: INVAX_SERVICE
+    value: gateway
+  - key: AUTH_URL
+    sync: false
+  - key: PRODUCTOS_URL
+    sync: false
+  - key: VENTAS_URL
+    sync: false
+  - key: REPOSICIONES_URL
+    sync: false
